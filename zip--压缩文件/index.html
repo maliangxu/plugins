@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>zip压缩与解压</title>
+</head>
+<body>
+<p>1、解压zip文件</p>
+	<input type="file" id='zipfile' accept='.zip'>
+	<input type="button" value='读取zip中的内容' onclick='readZip()'>
+	<div>
+	<progress id='finishing' value=0></progress>
+	<label for="">解压耗时:<span id="unzipTime"></span></label>
+	</div>
+	<div id="zipCont" style='width:600px;height:300px;overflow:auto;border:1px solid #000'></div>
+
+<p>2、压缩文件--zip格式</p>
+<input type="file" id='myfiles' multiple>
+<input type="button" value='执行压缩' onclick='compressZip()'>
+<a id='downloadZipFile' href='#' onclick='downloadZip()'>下载压缩文件</a>
+<label for="">压缩耗时：</label><span id="zipTime"></span>
+<ul id="file-list" style='width:600px;padding-top:20px;border:1px solid #000'></ul>
+	 <script type="text/javascript" src="js/zip.js"></script>
+	 <script type="text/javascript" src="js/zip-fs.js"></script>
+	 <script type="text/javascript" src="js/zip-ext.js"></script>
+	 <script type="text/javascript" src="js/mime-types.js"></script>
+	 <script type="text/javascript" src="js/dataview.js"></script>
+	 <script type="text/javascript" src="js/config.js"></script>
+
+<script>
+var requestFileSystem= window.webkitRequestFileSystem || window.mozRequestFileSystem || window.msRequestFileSystem || window.requestFileSystem;
+
+//解压zip文件
+var zipCont=document.getElementById('zipCont');
+function readZip(){//本地文件的信息
+	var zipfile=document.getElementById('zipfile');  
+	var myzip=zipfile.files[0];  console.log(myzip);
+	if(/.*\.zip/.test(myzip.name)){ 
+		unzipContent(myzip);
+	}else{
+		alert('选择zip类型的文件');
+	}	
+}
+//解压zip文件 获取文件内容
+function unzipContent(myzip){
+	var progress=document.getElementById('finishing');
+	var unzipTime=document.getElementById('unzipTime');
+	progress.value=0;
+	progress.max=0;
+	var startTime=+ new Date();
+	zipCont.innerHTML=myzip.name+'中包含的文件:<br>';
+	zip.createReader(new zip.BlobReader(myzip), function(reader) {
+  	reader.getEntries(function(entries) {  console.log('zip',entries);
+    if (entries.length) {
+    	var len=entries.length;
+    	var i=0;
+    	function outputEntryCont(){
+    		if(i>=len){ 
+    		 	return; 
+    		}
+ 
+			zipCont.innerHTML=zipCont.innerHTML+'文件名： '+entries[i].filename+"<br>";
+    		entries[i].getData(new zip.TextWriter(), function(text) {
+        	zipCont.innerHTML=zipCont.innerHTML+"文件内容： "+text+"<br>";
+        	i++;
+        	outputEntryCont();
+       		//  reader.close(function() { });
+        	}, function(current, total) {  // onprogress callback
+        		var curTime=+ new Date();
+        		unzipTime.innerHTML=(curTime-startTime)/1000+"秒";
+        		progress.value=current;
+        		progress.max=total;
+        	 });
+         }
+
+       	outputEntryCont();
+    }
+  });
+}, function(error) {
+  // onerror callback
+});
+}
+
+//压缩文件
+var zipWriter,zipFileEntry,creationMethod='Blob';  //File  Blob
+function compressZip(){
+	var zipTime=document.getElementById('zipTime');
+    var inputfiles=document.getElementById('myfiles');
+    var files=inputfiles.files;
+    var zipProgress = document.createElement("progress");
+    var fileList = document.getElementById("file-list");
+    var start=+ new Date();
+    addFiles(files, function() { }, function(file) {
+				var li = document.createElement("li");
+				zipProgress.value = 0;
+				zipProgress.max = 0;
+				li.textContent = file.name;
+				li.appendChild(zipProgress);
+				fileList.appendChild(li);
+			}, function(current, total) {
+				var end=+ new Date();
+				zipTime.innerHTML=(end-start)/1000+"秒";
+				zipProgress.value = current;
+				zipProgress.max = total;
+
+			}, function() {
+				var end=+ new Date();
+ 				zipTime.innerHTML=(end-start)/1000+"秒";
+				if (zipProgress.parentNode)
+					zipProgress.parentNode.removeChild(zipProgress);
+				// fileInput.value = "";
+				// fileInput.disabled = false;
+			});
+}
+//将文件添加至压缩包中
+function addFiles(files, oninit, onadd, onprogress, onend){
+	var addIndex = 0;
+				function nextFile() {
+					var file = files[addIndex];
+					onadd(file);
+					zipWriter.add(file.name, new zip.BlobReader(file), function() {
+						addIndex++;
+						if (addIndex < files.length)
+							nextFile();
+						else
+							onend();
+					}, onprogress);
+				}
+				function createZipWriter() {
+					zip.createWriter(writer, function(writer) {
+						zipWriter = writer;
+						oninit();
+						nextFile();
+					}, onerror);
+				}
+
+				if (zipWriter)
+					nextFile();
+				else if (creationMethod == "Blob") {
+					writer = new zip.BlobWriter();
+					createZipWriter();
+				} else {
+					createTempFile(function(fileEntry) {
+						zipFileEntry = fileEntry;
+						writer = new zip.FileWriter(zipFileEntry);
+						createZipWriter();
+					});
+				}
+
+}
+
+//下载压缩文件
+function downloadZip(){
+	var downloadButton=document.getElementById('downloadZipFile');
+	if (!downloadButton.download) {
+	if (typeof navigator.msSaveBlob == "function") {
+					getZippedBlob(function(blob) {
+						navigator.msSaveBlob(blob, 'new3.zip');
+					});
+	} else {
+		getBlobURL(function(blobURL) { 
+		var clickEvent;
+		clickEvent = document.createEvent("MouseEvent");
+		clickEvent.initMouseEvent("click", true, true, window, 0,0, 0, 0, false, false, false, false, 0, null);
+		downloadButton.href = blobURL;
+		downloadButton.download = 'test.zip';
+		downloadButton.dispatchEvent(clickEvent);
+		});
+		event.preventDefault();
+		return false;
+		}
+	}
+}
+//获取压缩文件blob对象
+function getZippedBlob(callback){
+	zipWriter.close(callback);
+}
+function getBlobURL(callback){
+	zipWriter.close(function(blob) {
+	var blobURL = creationMethod == "Blob" ? URL.createObjectURL(blob) : zipFileEntry.toURL();	
+	callback(blobURL);
+	zipWriter = null;
+	});
+}
+//创建压缩包
+function createTempFile(callback) {
+		var tmpFilename = "ziptest.zip";
+		requestFileSystem(PERSISTENT, 4 * 1024 * 1024 * 1024,function(fs){					fs.root.getDirectory('aaa',{create:true},function (){ //alert('创建目录成功');
+			requestFileSystem(PERSISTENT, 4 * 1024 * 1024 * 1024, function(filesystem) {
+			filesystem.root.getFile(tmpFilename, {
+					create : true
+				}, function(zipFile) {  
+					console.log('创建zip',zipFile);
+					callback(zipFile);
+				});
+		});
+
+		});
+	},function fail(){});
+		
+}
+
+//unzipByURL('newtest.zip');
+//指定待解压的zip文件的url  对其进行解压
+function unzipByURL(url){   
+	// use a BlobReader to read the zip from a Blob object
+ 	zip.createReader(new zip.HttpReader(url), function(reader) {
+  	// get all entries from the zip
+  	reader.getEntries(function(entries) {  console.log(entries);
+    if (entries.length) {
+      // get first entry content as text
+      entries[0].getData(new zip.TextWriter(), function(text) {
+        // text contains the entry data as a String
+        console.log('解压文件',text);
+        // close the zip reader
+        reader.close(function() {
+        });
+
+      }, function(current, total) {
+        // onprogress callback
+      });
+    }
+  });
+}, function(error) {
+});
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// var zipFs = new zip.fs.FS();
+
+// function onerror(message) {
+// 	console.error(message);
+// }
+
+// function logText(text) {
+// 	console.log(text);
+// 	console.log("--------------");
+// }
+
+// zipFs.importHttpContent("1.zip", false, function() {
+// 	var firstEntry = zipFs.root.children[0];
+// 	firstEntry.getText(function(data) {
+// 		logText(data);
+// 	});
+// }, onerror);
+
+
+</script>
+	
+
+
+
+
+</body>
+</html>
